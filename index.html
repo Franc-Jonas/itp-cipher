@@ -112,8 +112,7 @@
 <body>
 
 <header>
-  <h1>Reversible <span>Cellular Automaton</span> Cipher</h1>
-  <p class="sub">Second-order CA over a toroidal lattice.</p>
+  <h1>Reversible Cellular Automaton Cipher</h1>
 </header>
 
 <main>
@@ -178,22 +177,20 @@
     </div>
 
     <details>
-      <summary>How the cipher works</summary>
-      <p>Each cell is one bit. A generation is <code>C[i] = F(B)[i] ⊕ A[i]</code>, where
-      <code>A</code> and <code>B</code> are two consecutive states. Because the rule reads only
-      <code>B</code>, it inverts exactly: <code>P[i] = F(A)[i] ⊕ B[i]</code>.</p>
-      <p>The pair travels as <code>(A,B) → (B, F(B)⊕A)</code> going forward and
-      <code>(A,B) → (F(A)⊕B, A)</code> going back. Starting from
-      <code>(IV, plaintext)</code> and running G steps gives <code>(xᴳ⁻¹, xᴳ)</code> — both
-      halves must be transmitted, which is why the ciphertext is twice the grid size.</p>
-      <p><code>F</code> mixes the Moore-neighbourhood sum with key-derived nonlinear AND terms,
-      plus a position-dependent salt so that uniform regions can't survive.</p>
+      <summary>Jak to funguje</summary>
+      <p>Text se převede na bity (nuly a jedničky) a ty se naskládají do mřížky 48×48 buněk. Každá buňka je jeden bit.</p>
+      <p>Pak se mřížka opakovaně „vyvíjí". Nová hodnota každé buňky se spočítá z jejích osmi sousedů a z předešlého stavu. To se zopakuje asi 110–199krát.</p>
+      <p>Passphrase urcuje:</p>
+      <p>které členy pravidla platí (různé kombinace sčítání a násobení sousedů),</p>
+      <p>kolik generací se udělá,</p>
+      <p>náhodnost přičtená k buňkám,</p>
+      <p>Do šifrovaného textu se přidává nonce (náhodné číslo), aby stejná zpráva se stejným heslem dala pokaždé jiný výsledek.</p>
     </details>
   </section>
 </main>
 
 <footer style="text-align:center; padding:20px; color:var(--muted); font-size:.8rem;">
-  Jonáš Franc · <span>ITP šifra demo</span> · Jaroslav Dolanský
+  Jonáš Franc · ITP šifra demo · Jaroslav Dolanský
 </footer>
 
 <script>
