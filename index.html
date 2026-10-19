@@ -61,7 +61,8 @@
     border-radius:9px; padding:10px 12px; cursor:pointer; font-size:.8rem;
     font-family:inherit; white-space:nowrap; transition:.15s;
   }
-  .icon-btn:hover{color:var(--text); border-color:var(--accent);}
+  .icon-btn:hover:not(:disabled){color:var(--text); border-color:var(--accent);}
+  .icon-btn:disabled{opacity:.4; cursor:not-allowed;}
   .actions{display:flex; gap:9px; margin-top:18px; flex-wrap:wrap;}
   button.primary{
     flex:1; min-width:150px; padding:12px 18px; border:0; border-radius:10px;
@@ -74,7 +75,6 @@
   .status{margin-top:14px; font-size:.83rem; min-height:20px; color:var(--muted);}
   .status.ok{color:var(--ok)} .status.err{color:var(--err)}
 
-  /* ---- visualiser ---- */
   .viz-head{display:flex; justify-content:space-between; align-items:baseline;
             margin-bottom:12px; flex-wrap:wrap; gap:8px;}
   .viz-head h2{margin:0; font-size:1rem;}
@@ -87,8 +87,9 @@
   }
   .progress{height:5px; background:var(--panel2); border-radius:99px;
             overflow:hidden; margin:14px 0 10px;}
-  .progress > div{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent2));
-                  transition:width .05s linear;}
+  .progress > div{height:100%; width:0%;
+                  background:linear-gradient(90deg,var(--accent),var(--accent2));
+                  transition:width .08s linear;}
   .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
   .stat{background:var(--panel2); border-radius:9px; padding:9px 11px;}
   .stat .k{font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
@@ -103,7 +104,7 @@
   input[type=range]{flex:1; accent-color:var(--accent);}
   details{margin-top:18px; border-top:1px solid var(--border); padding-top:14px;}
   summary{cursor:pointer; font-size:.85rem; font-weight:600; color:var(--accent2);}
-  details p, details li{font-size:.83rem; color:var(--muted);}
+  details p{font-size:.83rem; color:var(--muted);}
   code{background:var(--panel2); padding:1px 5px; border-radius:4px;
        font-size:.85em; color:var(--accent2);}
 </style>
@@ -117,7 +118,6 @@
 </header>
 
 <main>
-  <!-- ============ CONTROLS ============ -->
   <section class="panel">
     <div class="tabs">
       <button class="tab active" data-mode="encrypt">Encrypt</button>
@@ -132,7 +132,7 @@
 
     <label for="input" id="inputLabel">Plain text</label>
     <textarea id="input" placeholder="Type the message you want to encrypt…"></textarea>
-    <div class="meta" id="counter">0 / 284 bytes</div>
+    <div class="meta" id="counter">0 / 286 bytes</div>
 
     <div class="actions">
       <button class="primary" id="runBtn">Encrypt</button>
@@ -149,7 +149,6 @@
     <div class="status" id="status"></div>
   </section>
 
-  <!-- ============ VISUALISER ============ -->
   <section class="panel">
     <div class="viz-head">
       <h2>Live lattice</h2>
@@ -181,23 +180,32 @@
 
     <details>
       <summary>How the cipher works</summary>
-      <p>Each cell is a bit. One generation is:</p>
-      <p><code>C[i] = F(B)[i] ⊕ A[i]</code></p>
-      <p>where <code>A</code> and <code>B</code> are two consecutive states. This makes decryption trivial: <code>P = F(A)[i] ⊕ B[i]</code>. The rule F combines neighbor sums with key-derived nonlinear terms.</p>
+      <p>Each cell is one bit. A generation is <code>C[i] = F(B)[i] ⊕ A[i]</code>, where
+      <code>A</code> and <code>B</code> are two consecutive states. Because the rule reads only
+      <code>B</code>, it inverts exactly: <code>P[i] = F(A)[i] ⊕ B[i]</code>.</p>
+      <p>The pair travels as <code>(A,B) → (B, F(B)⊕A)</code> going forward and
+      <code>(A,B) → (F(A)⊕B, A)</code> going back. Starting from
+      <code>(IV, plaintext)</code> and running G steps gives <code>(xᴳ⁻¹, xᴳ)</code> — both
+      halves must be transmitted, which is why the ciphertext is twice the grid size.</p>
+      <p><code>F</code> mixes the Moore-neighbourhood sum with key-derived nonlinear AND terms,
+      plus a position-dependent salt so that uniform regions can't survive.</p>
     </details>
   </section>
 </main>
 
 <footer style="text-align:center; padding:20px; color:var(--muted); font-size:.8rem;">
-  Built for educational exploration of spatiotemporal cryptography. GitHub Pages guide below ↓
+  Spatiotemporal cryptography demo · 48×48 toroidal lattice · 286-byte payload
 </footer>
 
 <script>
 // ================= CONSTANTS =================
-const W = 48, H = 48, N = W * H;
-const CAPACITY_BYTES = Math.floor(N / 8) - 2; // 284 bytes
+const W = 48, H = 48, N = W * H;              // 2304 cells
+const GRID_BYTES = N >> 3;                    // 288
+const CAPACITY_BYTES = GRID_BYTES - 2;        // 286
+const NONCE_LEN = 16, TAG_LEN = 4;
+const CT_LEN = NONCE_LEN + 2 * GRID_BYTES + TAG_LEN;  // 596
 
-// ================= SHA-256 IMPLEMENTATION =================
+// ================= SHA-256 =================
 const K256 = new Uint32Array([
   0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
   0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -212,7 +220,8 @@ const K256 = new Uint32Array([
 function rotr(x, n) { return ((x >>> n) | (x << (32 - n))) >>> 0; }
 
 function sha256(input) {
-  const H0 = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  const H0 = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                              0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
   const len = input.length;
   const bitLen = len * 8;
   const padLen = ((len + 9 + 63) >> 6) << 6;
@@ -222,14 +231,14 @@ function sha256(input) {
   const dv = new DataView(msg.buffer);
   dv.setUint32(padLen - 4, bitLen >>> 0, false);
   dv.setUint32(padLen - 8, Math.floor(bitLen / 4294967296), false);
-  
+
   const w = new Uint32Array(64);
   const h = H0.slice();
   for (let off = 0; off < padLen; off += 64) {
-    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i*4, false);
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
     for (let i = 16; i < 64; i++) {
-      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15]>>>3);
-      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2]>>>10);
+      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15] >>> 3);
+      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2] >>> 10);
       w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
     }
     let [a,b,c,d,e,f,g,hh] = h;
@@ -248,14 +257,14 @@ function sha256(input) {
   }
   const out = new Uint8Array(32);
   const odv = new DataView(out.buffer);
-  for (let i = 0; i < 8; i++) odv.setUint32(i*4, h[i], false);
+  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, h[i], false);
   return out;
 }
 
-// ================= PRNG =================
+// ================= PRNG (xorshift128) =================
 function makePRNG(seedWords) {
-  let s = seedWords.slice();
-  return function() {
+  const s = seedWords.slice();
+  return function () {
     let t = s[3];
     const a = s[0];
     s[3] = s[2]; s[2] = s[1]; s[1] = a;
@@ -277,43 +286,66 @@ function randBits(rng, count) {
 }
 
 // ================= KEY DERIVATION =================
-async function deriveKeyMaterial(passphrase, nonce) {
-  const pw = new TextEncoder().encode(passphrase);
-  const seedInput = new Uint8Array(4 + pw.length + nonce.length);
-  seedInput.set(new TextEncoder().encode('RCA1'), 0);
-  seedInput.set(pw, 4);
-  seedInput.set(nonce, 4 + pw.length);
+function deriveKeyMaterial(passphrase, nonce) {
+  const enc = new TextEncoder();
+  const pw = enc.encode(passphrase);
+  const dom = enc.encode('RCA1');
+  const seedInput = new Uint8Array(dom.length + pw.length + nonce.length);
+  seedInput.set(dom, 0);
+  seedInput.set(pw, dom.length);
+  seedInput.set(nonce, dom.length + pw.length);
+
   const h = sha256(seedInput);
   const dv = new DataView(h.buffer);
   const seed = [dv.getUint32(0), dv.getUint32(4), dv.getUint32(8), dv.getUint32(12)];
-  if (!(seed[0]|seed[1]|seed[2]|seed[3])) seed[0] = 0x9e3779b9;
+  if (!(seed[0] | seed[1] | seed[2] | seed[3])) seed[0] = 0x9e3779b9;
+
   const rng = makePRNG(seed);
-  
+
   const coeff = randBits(rng, 12);
-  coeff[0] = 1; coeff[1] = 1; // Force non-degeneracy
-  
-  const generations = 110 + (rng() % 90);
-  const salt = randBits(rng, N);
-  const iv = randBits(rng, N);
+  coeff[0] = 1; coeff[1] = 1;                 // guarantee non-degenerate rule
+  const generations = 110 + (rng() % 90);     // 110..199
+  const salt    = randBits(rng, N);
+  const iv      = randBits(rng, N);
   const preMask = randBits(rng, N);
-  
-  return { coeff, generations, salt, iv, preMask };
+
+  // Key-confirmation tag key, derived from the same master hash
+  const tagDom = enc.encode('RCATAG1');
+  const tagSeed = new Uint8Array(tagDom.length + h.length);
+  tagSeed.set(tagDom, 0);
+  tagSeed.set(h, tagDom.length);
+  const tagKey = sha256(tagSeed);
+
+  return { coeff, generations, salt, iv, preMask, tagKey };
+}
+
+function computeTag(tagKey, ctA, ctB) {
+  const buf = new Uint8Array(tagKey.length + ctA.length + ctB.length);
+  buf.set(tagKey, 0);
+  buf.set(ctA, tagKey.length);
+  buf.set(ctB, tagKey.length + ctA.length);
+  return sha256(buf).slice(0, TAG_LEN);
+}
+
+function tagsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 // ================= BIT PACKING =================
 function bytesToBits(bytes, bitLen) {
   const out = new Uint8Array(bitLen);
-  for (let i = 0; i < bitLen; i++) {
-    out[i] = (bytes[i >> 3] >> (7 - (i & 7))) & 1;
-  }
+  for (let i = 0; i < bitLen; i++) out[i] = (bytes[i >> 3] >> (7 - (i & 7))) & 1;
   return out;
 }
 
 function bitsToBytes(bits) {
-  const out = new Uint8Array((bits.length + 7) >> 3);
+  const out = new Uint8Array(bits.length >> 3);
   for (let i = 0; i < out.length; i++) {
     let b = 0;
-    for (let k = 0; k < 8 && i*8+k < bits.length; k++) b = (b << 1) | bits[i*8+k];
+    for (let k = 0; k < 8; k++) b = (b << 1) | bits[i * 8 + k];
     out[i] = b;
   }
   return out;
@@ -321,9 +353,10 @@ function bitsToBytes(bits) {
 
 function buildPayload(text) {
   const data = new TextEncoder().encode(text);
-  if (data.length > CAPACITY_BYTES) throw new Error(`Too long: max ${CAPACITY_BYTES} bytes`);
-  const total = N >> 3; // 288 bytes
-  const buf = new Uint8Array(total);
+  if (data.length > CAPACITY_BYTES) {
+    throw new Error(`Message too long: ${data.length} bytes (max ${CAPACITY_BYTES})`);
+  }
+  const buf = new Uint8Array(GRID_BYTES);
   buf[0] = (data.length >> 8) & 0xff;
   buf[1] = data.length & 0xff;
   buf.set(data, 2);
@@ -335,51 +368,55 @@ function parsePayload(bits, preMask) {
   for (let i = 0; i < N; i++) b[i] ^= preMask[i];
   const bytes = bitsToBytes(b);
   const len = (bytes[0] << 8) | bytes[1];
-  if (len > CAPACITY_BYTES) throw new Error('Invalid length header');
+  if (len > CAPACITY_BYTES) throw new Error('length header out of range');
   const data = bytes.slice(2, 2 + len);
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(data);
   } catch {
-    throw new Error('Payload is not valid UTF-8');
+    throw new Error('payload is not valid UTF-8');
   }
 }
 
-// ================= CA RULE F =================
+// ================= THE CA RULE =================
 function F(src, dst, coeff, salt) {
   for (let y = 0; y < H; y++) {
     const yUp = (y - 1 + H) % H, yDn = (y + 1) % H;
     const rowU = yUp * W, rowM = y * W, rowD = yDn * W;
     for (let x = 0; x < W; x++) {
       const xL = (x - 1 + W) % W, xR = (x + 1) % W;
-      const s = src[rowM + x];
+      const s  = src[rowM + x];
       const n0 = src[rowU + xL], n1 = src[rowU + x], n2 = src[rowU + xR];
       const n3 = src[rowM + xL],                     n4 = src[rowM + xR];
       const n5 = src[rowD + xL], n6 = src[rowD + x], n7 = src[rowD + xR];
-      const nSum = n0+n1+n2+n3+n4+n5+n6+n7;
+      const nSum = n0 + n1 + n2 + n3 + n4 + n5 + n6 + n7;
 
       let v = 0;
-      v ^= coeff[0] & s;
-      v ^= coeff[1] & (nSum & 1);
-      v ^= coeff[2] & ((nSum >> 1) & 1);
-      v ^= coeff[3] & ((nSum >> 2) & 1);
-      v ^= coeff[4] & (n0 & n4);
-      v ^= coeff[5] & (n2 & n6);
-      v ^= coeff[6] & (n1 & n7);
-      v ^= coeff[7] & (n3 & n5);
-      v ^= coeff[8] & ((n0^n1^n2^n3) & (n4^n5^n6^n7));
-      v ^= coeff[9] & (s & (n0^n2^n5^n7));
+      v ^= coeff[0]  & s;
+      v ^= coeff[1]  & (nSum & 1);
+      v ^= coeff[2]  & ((nSum >> 1) & 1);
+      v ^= coeff[3]  & ((nSum >> 2) & 1);
+      v ^= coeff[4]  & (n0 & n4);
+      v ^= coeff[5]  & (n2 & n6);
+      v ^= coeff[6]  & (n1 & n7);
+      v ^= coeff[7]  & (n3 & n5);
+      v ^= coeff[8]  & ((n0 ^ n1 ^ n2 ^ n3) & (n4 ^ n5 ^ n6 ^ n7));
+      v ^= coeff[9]  & (s & (n0 ^ n2 ^ n5 ^ n7));
       v ^= coeff[10] & (n1 & n3 & n5 & n7);
       v ^= coeff[11] & ((n0 | n2) & (n4 | n6));
-      
+
       dst[rowM + x] = (v ^ salt[rowM + x]) & 1;
     }
   }
 }
 
-// ================= RUNNER FUNCTIONS =================
+// ================= CA RUNNERS =================
+// Pair convention: (A, B) = (x^(t-1), x^t)
+//   forward:  (A,B) -> (B, F(B) ^ A)
+//   backward: (A,B) -> (F(A) ^ B, A)
 async function runForward(A, B, km, onStep) {
   const tmp = new Uint8Array(N);
-  for (let g = 0; g < km.generations; g++) {
+  const total = km.generations;
+  for (let g = 0; g < total; g++) {
     F(B, tmp, km.coeff, km.salt);
     const C = new Uint8Array(N);
     let flips = 0;
@@ -388,14 +425,15 @@ async function runForward(A, B, km, onStep) {
       if (C[i] !== B[i]) flips++;
     }
     A = B; B = C;
-    await onStep(g + 1, B, flips / N);
+    await onStep(g + 1, total, B, flips / N);
   }
   return { A, B };
 }
 
 async function runBackward(A, B, km, onStep) {
   const tmp = new Uint8Array(N);
-  for (let g = 0; g < km.generations; g++) {
+  const total = km.generations;
+  for (let g = 0; g < total; g++) {
     F(A, tmp, km.coeff, km.salt);
     const P = new Uint8Array(N);
     let flips = 0;
@@ -403,68 +441,91 @@ async function runBackward(A, B, km, onStep) {
       P[i] = tmp[i] ^ B[i];
       if (P[i] !== A[i]) flips++;
     }
-    // New pair = (P, A)
-    const newA = P;
-    B = A;
-    A = newA;
-    await onStep(g + 1, A, flips / N);
+    B = A; A = P;                      // new pair = (P, old A)
+    await onStep(g + 1, total, A, flips / N);
   }
   return { A, B };
 }
 
-// ================= ENCRYPTION / DECRYPTION API =================
-async function encryptText(passphrase, text, onProgress) {
-  const nonce = crypto.getRandomValues(new Uint8Array(16));
-  const km = await deriveKeyMaterial(passphrase, nonce);
-  const payload = buildPayload(text);
-  let bits = bytesToBits(payload, N);
-  for (let i = 0; i < N; i++) bits[i] ^= km.preMask[i];
-  
-  let A = km.iv.slice();
-  let B = bits;
-  let lastGrid = null;
-  
-  await runForward(A, B, km, async (gen, grid, flipRate) => {
-    if (onProgress) {
-      lastGrid = grid;
-      await onProgress(gen, grid, flipRate, lastGrid);
-    }
-  });
-  
-  // Serialize: nonce || A || B
-  const ct = new Uint8Array(16 + (N>>3) + (N>>3));
-  ct.set(nonce, 0);
-  ct.set(bitsToBytes(A), 16);
-  ct.set(bitsToBytes(B), 16 + (N>>3));
-  
-  return { ct, generations: km.generations };
+// ================= BASE64 HELPERS =================
+function u8ToB64(u8) {
+  let s = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
 }
 
-async function decryptText(passphrase, base64Ct, onProgress) {
-  // Parse ciphertext
-  let s = base64Ct.trim().replace(/\s+/g, '');
+function b64ToU8(b64) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+// ================= HIGH-LEVEL API =================
+async function encryptText(passphrase, text, onStep) {
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_LEN));
+  const km = deriveKeyMaterial(passphrase, nonce);
+
+  const payload = buildPayload(text);
+  const bits = bytesToBits(payload, N);
+  for (let i = 0; i < N; i++) bits[i] ^= km.preMask[i];
+
+  const startA = km.iv.slice();
+  const startB = bits;
+
+  // *** THE FIX: capture the returned pair ***
+  const { A, B } = await runForward(startA, startB, km, onStep);
+
+  const ctA = bitsToBytes(A);
+  const ctB = bitsToBytes(B);
+  const tag = computeTag(km.tagKey, ctA, ctB);
+
+  const ct = new Uint8Array(CT_LEN);
+  ct.set(nonce, 0);
+  ct.set(ctA, NONCE_LEN);
+  ct.set(ctB, NONCE_LEN + GRID_BYTES);
+  ct.set(tag, NONCE_LEN + 2 * GRID_BYTES);
+
+  return { ciphertext: 'RCA1:' + u8ToB64(ct), generations: km.generations };
+}
+
+async function decryptText(passphrase, armored, onStep) {
+  let s = armored.trim().replace(/\s+/g, '');
   if (s.startsWith('RCA1:')) s = s.slice(5);
-  
-  const ct = new Uint8Array(atob(s).split('').map(c => c.charCodeAt(0)));
-  if (ct.length !== 16 + 2*(N>>3)) {
-    throw new Error(`Wrong ciphertext length (${ct.length})`);
+  if (!s) throw new Error('no ciphertext supplied');
+
+  let ct;
+  try {
+    ct = b64ToU8(s);
+  } catch {
+    throw new Error('not valid base64');
   }
-  
-  const nonce = ct.slice(0, 16);
-  const A = bytesToBits(ct.slice(16, 16 + (N>>3)), N);
-  const B = bytesToBits(ct.slice(16 + (N>>3)), N);
-  
-  const km = await deriveKeyMaterial(passphrase, nonce);
-  
-  let lastGrid = null;
-  const { A: finalA } = await runBackward(A, B, km, async (gen, grid, flipRate) => {
-    if (onProgress) {
-      lastGrid = grid;
-      await onProgress(gen, grid, flipRate, lastGrid);
-    }
-  });
-  
-  return parsePayload(finalA, km.preMask);
+  if (ct.length !== CT_LEN) {
+    throw new Error(`expected ${CT_LEN} bytes, got ${ct.length}`);
+  }
+
+  const nonce = ct.slice(0, NONCE_LEN);
+  const ctA = ct.slice(NONCE_LEN, NONCE_LEN + GRID_BYTES);
+  const ctB = ct.slice(NONCE_LEN + GRID_BYTES, NONCE_LEN + 2 * GRID_BYTES);
+  const tag = ct.slice(NONCE_LEN + 2 * GRID_BYTES);
+
+  const km = deriveKeyMaterial(passphrase, nonce);
+
+  // Fail fast and clearly on a wrong passphrase
+  if (!tagsEqual(tag, computeTag(km.tagKey, ctA, ctB))) {
+    throw new Error('WRONG_KEY');
+  }
+
+  const A0 = bytesToBits(ctA, N);   // x^(G-1)
+  const B0 = bytesToBits(ctB, N);   // x^G
+
+  const { B: finalB } = await runBackward(A0, B0, km, onStep);
+
+  // *** THE FIX: plaintext lives in the SECOND element of the pair ***
+  return parsePayload(finalB, km.preMask);
 }
 
 // ================= RENDERING =================
@@ -476,21 +537,21 @@ const offCtx = off.getContext('2d');
 const imgData = offCtx.createImageData(W, H);
 let lastRendered = null;
 
-function render(grid, speed) {
+function render(grid) {
   const d = imgData.data;
   for (let i = 0; i < N; i++) {
     const v = grid[i];
     const changed = lastRendered ? (grid[i] !== lastRendered[i]) : false;
     let r, g, b;
     if (v) {
-      if (changed) { r=190; g=170; b=255; }   // bright
-      else { r=109; g=74; b=255; }            // proton purple
+      if (changed) { r = 190; g = 170; b = 255; }
+      else         { r = 109; g =  74; b = 255; }
     } else {
-      if (changed) { r=48; g=34; b=92; }
-      else { r=13; g=11; b=26; }
+      if (changed) { r =  48; g =  34; b =  92; }
+      else         { r =  13; g =  11; b =  26; }
     }
     const o = i * 4;
-    d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
+    d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
   }
   lastRendered = grid;
   offCtx.putImageData(imgData, 0, 0);
@@ -499,16 +560,8 @@ function render(grid, speed) {
   ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
 }
 
-// ================= ANIMATION FRAME HELPERS =================
-async function nextFrames(count) {
-  return new Promise(res => {
-    let done = 0;
-    function loop() {
-      if (++done >= count) res();
-      else requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-  });
+function nextFrame() {
+  return new Promise(res => requestAnimationFrame(() => res()));
 }
 
 // ================= UI STATE =================
@@ -516,154 +569,93 @@ let mode = 'encrypt';
 let animating = false;
 let speed = 2;
 
-// ================= EVENT HANDLERS =================
-document.addEventListener('DOMContentLoaded', () => {
-  // Tabs
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      if (animating) return;
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      mode = tab.dataset.mode;
-      updateUI();
-    });
+// ================= UI WIRING =================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    if (animating) return;
+    setMode(tab.dataset.mode);
   });
-  
-  // Password toggle
-  document.getElementById('togglePass').addEventListener('click', e => {
-    const input = document.getElementById('pass');
-    input.type = input.type === 'password' ? 'text' : 'password';
-    e.target.textContent = input.type === 'password' ? 'Show' : 'Hide';
-  });
-  
-  // Input character counter
-  document.getElementById('input').addEventListener('input', e => {
-    const bytes = new TextEncoder().encode(e.target.value).length;
-    document.getElementById('counter').textContent = `${bytes} / ${CAPACITY_BYTES} bytes`;
-  });
-  
-  // Speed slider
-  document.getElementById('speed').addEventListener('input', e => {
-    speed = parseInt(e.target.value);
-    document.getElementById('speedVal').textContent = `${speed} gen/frame`;
-  });
-  
-  // Buttons
-  document.getElementById('runBtn').addEventListener('click', run);
-  document.getElementById('swapBtn').addEventListener('click', swapIO);
-  document.getElementById('clearBtn').addEventListener('click', clearAll);
-  document.getElementById('copyBtn').addEventListener('click', copyOutput);
-  
-  // Keyboard shortcut
-  document.addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 'Enter') run();
-  });
-  
-  // Initial render
-  render(new Uint8Array(N).fill(0), speed);
 });
 
+document.getElementById('togglePass').addEventListener('click', e => {
+  const input = document.getElementById('pass');
+  input.type = input.type === 'password' ? 'text' : 'password';
+  e.target.textContent = input.type === 'password' ? 'Show' : 'Hide';
+});
+
+document.getElementById('input').addEventListener('input', e => {
+  updateCounter(e.target.value);
+});
+
+document.getElementById('speed').addEventListener('input', e => {
+  speed = parseInt(e.target.value, 10);
+  document.getElementById('speedVal').textContent = `${speed} gen/frame`;
+});
+
+document.getElementById('runBtn').addEventListener('click', run);
+document.getElementById('swapBtn').addEventListener('click', swapIO);
+document.getElementById('clearBtn').addEventListener('click', clearAll);
+document.getElementById('copyBtn').addEventListener('click', copyOutput);
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); run(); }
+});
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.mode === m));
+  updateUI();
+}
+
+function updateCounter(value) {
+  const bytes = new TextEncoder().encode(value).length;
+  document.getElementById('counter').textContent = `${bytes} / ${CAPACITY_BYTES} bytes`;
+}
+
 function updateUI() {
-  const inputLabel = document.getElementById('inputLabel');
+  const inputLabel  = document.getElementById('inputLabel');
   const outputLabel = document.getElementById('outputLabel');
-  const runBtn = document.getElementById('runBtn');
-  
+  const runBtn      = document.getElementById('runBtn');
+  const input       = document.getElementById('input');
+
   if (mode === 'encrypt') {
-    inputLabel.textContent = 'Plain text';
+    inputLabel.textContent  = 'Plain text';
     outputLabel.textContent = 'Ciphertext';
-    runBtn.textContent = 'Encrypt';
-    document.getElementById('input').placeholder = 'Type the message you want to encrypt…';
+    runBtn.textContent      = 'Encrypt';
+    input.placeholder       = 'Type the message you want to encrypt…';
   } else {
-    inputLabel.textContent = 'Ciphertext';
+    inputLabel.textContent  = 'Ciphertext';
     outputLabel.textContent = 'Plain text';
-    runBtn.textContent = 'Decrypt';
-    document.getElementById('input').placeholder = 'Paste RCA1: prefixed ciphertext here…';
+    runBtn.textContent      = 'Decrypt';
+    input.placeholder       = 'Paste RCA1:… ciphertext here';
   }
   setStatus('', '');
 }
 
-async function run() {
-  if (animating) return;
-  animating = true;
-  
-  const passphrase = document.getElementById('pass').value;
-  const input = document.getElementById('input').value;
-  const runBtn = document.getElementById('runBtn');
-  const status = document.getElementById('status');
-  
-  if (!passphrase) { setStatus('Enter a passphrase', 'err'); animating = false; return; }
-  if (!input.trim()) { setStatus('Enter text to process', 'err'); animating = false; return; }
-  
-  runBtn.disabled = true;
-  setStatus('Processing...', '');
-  
-  try {
-    const startTime = performance.now();
-    
-    const onProgress = async (gen, grid, flipRate, lastGrid) => {
-      // Update stats
-      document.getElementById('genLabel').textContent = `Gen ${gen}`;
-      document.getElementById('sGen').textContent = gen;
-      document.getElementById('sFlips').textContent = Math.round(flipRate * 100) + '%';
-      document.getElementById('bar').style.width = (gen / totalRounds * 100) + '%';
-      
-      // Render every 'speed' generations
-      const framesPerTick = speed;
-      const tick = gen % framesPerTick === 0 || gen === totalRounds;
-      if (tick) render(grid, speed);
-      
-      // Yield to animation frame
-      await nextFrames(1);
-    };
-    
-    let totalRounds = 0;
-    let result;
-    
-    if (mode === 'encrypt') {
-      totalRounds = 200; // Approximate for progress bar
-      result = await encryptText(passphrase, input, onProgress);
-    } else {
-      totalRounds = 200; // Will be updated with actual
-      result = await decryptText(passphrase, input, onProgress);
-    }
-    
-    const elapsed = performance.now() - startTime;
-    
-    document.getElementById('genLabel').textContent = 'complete';
-    document.getElementById('sGen').textContent = '—';
-    document.getElementById('sFlips').textContent = '—';
-    document.getElementById('bar').style.width = '100%';
-    render(new Uint8Array(N).fill(0), speed);
-    
-    if (mode === 'encrypt') {
-      // Serialize output
-      const b64 = btoa(String.fromCharCode(...result.ct));
-      document.getElementById('output').value = 'RCA1:' + b64;
-      setStatus(`Encrypted in ${(elapsed/1000).toFixed(2)}s`, 'ok');
-    } else {
-      document.getElementById('output').value = result;
-      setStatus(`Decrypted in ${(elapsed/1000).toFixed(2)}s`, 'ok');
-    }
-    
-  } catch (err) {
-    console.error(err);
-    setStatus(mode === 'encrypt' ? 
-      `Encryption failed: ${err.message}` : 
-      `Decryption failed (wrong key or corrupted?): ${err.message}`, 'err');
-  }
-  
-  animating = false;
-  runBtn.disabled = false;
+function setBusy(busy) {
+  animating = busy;
+  document.getElementById('runBtn').disabled = busy;
+  document.getElementById('clearBtn').disabled = busy;
+  document.getElementById('swapBtn').disabled = busy;
+  document.querySelectorAll('.tab').forEach(t => t.disabled = busy);
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (type || '');
 }
 
 function swapIO() {
   if (animating) return;
-  const inputEl = document.getElementById('input');
-  const outputEl = document.getElementById('output');
-  const temp = inputEl.value;
-  inputEl.value = outputEl.value;
-  outputEl.value = '';
-  setStatus('Swapped. Click "Run" to process.', '');
+  const input = document.getElementById('input');
+  const output = document.getElementById('output');
+  const temp = input.value;
+  input.value = output.value;
+  output.value = '';
+  updateCounter(input.value);
+  setStatus('Swapped. Press Ctrl+Enter or click Run.', '');
 }
 
 function clearAll() {
@@ -672,11 +664,21 @@ function clearAll() {
   document.getElementById('output').value = '';
   document.getElementById('pass').value = '';
   setStatus('', '');
-  render(new Uint8Array(N).fill(0), speed);
+  updateCounter('');
+  render(new Uint8Array(N).fill(0));
+  document.getElementById('genLabel').textContent = 'idle';
+  document.getElementById('sGen').textContent = '—';
+  document.getElementById('sFlips').textContent = '—';
+  document.getElementById('sRounds').textContent = '—';
+  document.getElementById('bar').style.width = '0%';
 }
 
 function copyOutput() {
   const output = document.getElementById('output').value;
+  if (!output) {
+    setStatus('Nothing to copy', '');
+    return;
+  }
   navigator.clipboard.writeText(output).then(() => {
     setStatus('Copied to clipboard!', 'ok');
   }).catch(() => {
@@ -684,11 +686,86 @@ function copyOutput() {
   });
 }
 
-function setStatus(msg, type) {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.className = 'status ' + type;
+// ================= MAIN RUN LOGIC =================
+async function run() {
+  if (animating) return;
+
+  const passphrase = document.getElementById('pass').value;
+  const inputText = document.getElementById('input').value;
+  const runBtn = document.getElementById('runBtn');
+
+  if (!passphrase) {
+    setStatus('Enter a passphrase', 'err');
+    return;
+  }
+  if (!inputText.trim()) {
+    setStatus('Enter text to process', 'err');
+    return;
+  }
+
+  setBusy(true);
+  setStatus('Processing...', '');
+
+  const startTime = performance.now();
+  let actualRounds = 0;
+  let lastGrid = null;
+
+  const onProgress = async (gen, total, grid, flipRate) => {
+    actualRounds = total;
+    document.getElementById('genLabel').textContent = `Gen ${gen}`;
+    document.getElementById('sGen').textContent = gen;
+    document.getElementById('sFlips').textContent = Math.round(flipRate * 100) + '%';
+    document.getElementById('sRounds').textContent = total;
+    document.getElementById('bar').style.width = (gen / total * 100) + '%';
+
+    // Render every 'speed' generations for visual smoothness
+    if (gen % speed === 0 || gen === total) {
+      render(grid);
+    }
+
+    // Yield to animation frame
+    await nextFrame();
+  };
+
+  try {
+    let result;
+    if (mode === 'encrypt') {
+      result = await encryptText(passphrase, inputText, onProgress);
+    } else {
+      result = await decryptText(passphrase, inputText, onProgress);
+    }
+
+    const elapsed = performance.now() - startTime;
+
+    document.getElementById('genLabel').textContent = 'complete';
+    document.getElementById('sGen').textContent = '—';
+    document.getElementById('sFlips').textContent = '—';
+    document.getElementById('bar').style.width = '100%';
+    render(lastGrid || new Uint8Array(N).fill(0));
+
+    if (mode === 'encrypt') {
+      document.getElementById('output').value = result.ciphertext;
+      setStatus(`✓ Encrypted in ${(elapsed/1000).toFixed(2)}s (${result.generations} rounds)`, 'ok');
+    } else {
+      document.getElementById('output').value = result;
+      setStatus(`✓ Decrypted in ${(elapsed/1000).toFixed(2)}s (${actualRounds} rounds)`, 'ok');
+    }
+  } catch (err) {
+    console.error(err);
+    if (err.message === 'WRONG_KEY') {
+      setStatus('✗ Wrong passphrase or corrupted ciphertext', 'err');
+    } else {
+      const prefix = mode === 'encrypt' ? 'Encryption' : 'Decryption';
+      setStatus(`✗ ${prefix} failed: ${err.message}`, 'err');
+    }
+  }
+
+  setBusy(false);
 }
+
+// Initialize
+updateCounter(document.getElementById('input').value);
+render(new Uint8Array(N).fill(0));
 </script>
 </body>
 </html>
