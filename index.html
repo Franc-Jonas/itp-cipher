@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reversible CA Cipher</title>
+<style>
+  :root{
+    --bg:#0b0a12; --panel:#14121f; --panel2:#1b1829; --border:#282338;
+    --text:#e8e6f0; --muted:#8b86a3; --accent:#6d4aff; --accent2:#9d7fff;
+    --ok:#43d9a3; --warn:#ffb454; --err:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55;
+  }
+  header{padding:28px 20px 16px; max-width:1180px; margin:0 auto;}
+  h1{margin:0 0 6px; font-size:1.65rem; letter-spacing:-.02em;}
+  h1 span{color:var(--accent2)}
+  .sub{color:var(--muted); font-size:.92rem; margin:0;}
+  .badge{
+    display:inline-block; margin-top:12px; padding:5px 11px; border-radius:999px;
+    background:rgba(255,180,84,.12); border:1px solid rgba(255,180,84,.35);
+    color:var(--warn); font-size:.78rem; font-weight:600;
+  }
+  main{
+    max-width:1180px; margin:0 auto; padding:0 20px 60px;
+    display:grid; grid-template-columns:minmax(330px,430px) 1fr; gap:20px;
+    align-items:start;
+  }
+  @media(max-width:920px){ main{grid-template-columns:1fr} }
+  .panel{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:18px;
+  }
+  .tabs{display:flex; gap:6px; background:var(--panel2); padding:5px;
+        border-radius:10px; margin-bottom:16px;}
+  .tab{
+    flex:1; padding:9px; border:0; border-radius:7px; cursor:pointer;
+    background:transparent; color:var(--muted); font-weight:600;
+    font-size:.88rem; font-family:inherit; transition:.15s;
+  }
+  .tab.active{background:var(--accent); color:#fff;}
+  label{display:block; font-size:.79rem; font-weight:600; color:var(--muted);
+        text-transform:uppercase; letter-spacing:.05em; margin:14px 0 6px;}
+  input[type=password], input[type=text], textarea{
+    width:100%; background:var(--bg); color:var(--text);
+    border:1px solid var(--border); border-radius:9px; padding:10px 12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86rem;
+    outline:none; transition:.15s; resize:vertical;
+  }
+  input:focus, textarea:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(109,74,255,.15);}
+  textarea{min-height:104px;}
+  #output{min-height:132px;}
+  .row{display:flex; gap:8px; align-items:center;}
+  .row > input{flex:1;}
+  .icon-btn{
+    background:var(--panel2); border:1px solid var(--border); color:var(--muted);
+    border-radius:9px; padding:10px 12px; cursor:pointer; font-size:.8rem;
+    font-family:inherit; white-space:nowrap; transition:.15s;
+  }
+  .icon-btn:hover{color:var(--text); border-color:var(--accent);}
+  .actions{display:flex; gap:9px; margin-top:18px; flex-wrap:wrap;}
+  button.primary{
+    flex:1; min-width:150px; padding:12px 18px; border:0; border-radius:10px;
+    background:var(--accent); color:#fff; font-weight:700; font-size:.94rem;
+    cursor:pointer; font-family:inherit; transition:.15s;
+  }
+  button.primary:hover:not(:disabled){background:var(--accent2);}
+  button.primary:disabled{opacity:.45; cursor:not-allowed;}
+  .meta{font-size:.76rem; color:var(--muted); margin-top:7px; text-align:right;}
+  .status{margin-top:14px; font-size:.83rem; min-height:20px; color:var(--muted);}
+  .status.ok{color:var(--ok)} .status.err{color:var(--err)}
+
+  /* ---- visualiser ---- */
+  .viz-head{display:flex; justify-content:space-between; align-items:baseline;
+            margin-bottom:12px; flex-wrap:wrap; gap:8px;}
+  .viz-head h2{margin:0; font-size:1rem;}
+  .gen-label{font-family:ui-monospace,monospace; font-size:.82rem; color:var(--accent2);}
+  canvas{
+    width:100%; max-width:600px; aspect-ratio:1/1; display:block;
+    margin:0 auto; border-radius:10px; background:#08070e;
+    image-rendering:pixelated; image-rendering:crisp-edges;
+    border:1px solid var(--border);
+  }
+  .progress{height:5px; background:var(--panel2); border-radius:99px;
+            overflow:hidden; margin:14px 0 10px;}
+  .progress > div{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent2));
+                  transition:width .05s linear;}
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+  .stat{background:var(--panel2); border-radius:9px; padding:9px 11px;}
+  .stat .k{font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+           color:var(--muted); font-weight:600;}
+  .stat .v{font-family:ui-monospace,monospace; font-size:1.02rem; color:var(--text);}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px;
+          font-size:.76rem; color:var(--muted);}
+  .legend i{display:inline-block; width:11px; height:11px; border-radius:3px;
+            margin-right:6px; vertical-align:-1px;}
+  .slider-row{display:flex; align-items:center; gap:10px; margin-top:14px;
+              font-size:.78rem; color:var(--muted);}
+  input[type=range]{flex:1; accent-color:var(--accent);}
+  details{margin-top:18px; border-top:1px solid var(--border); padding-top:14px;}
+  summary{cursor:pointer; font-size:.85rem; font-weight:600; color:var(--accent2);}
+  details p, details li{font-size:.83rem; color:var(--muted);}
+  code{background:var(--panel2); padding:1px 5px; border-radius:4px;
+       font-size:.85em; color:var(--accent2);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Reversible <span>Cellular Automaton</span> Cipher</h1>
+  <p class="sub">Second-order CA over a toroidal lattice — watch the avalanche propagate in real time.</p>
+  <div class="badge">⚠ Educational toy — do not use for anything that matters</div>
+</header>
+
+<main>
+  <!-- ============ CONTROLS ============ -->
+  <section class="panel">
+    <div class="tabs">
+      <button class="tab active" data-mode="encrypt">Encrypt</button>
+      <button class="tab" data-mode="decrypt">Decrypt</button>
+    </div>
+
+    <label for="pass">Passphrase</label>
+    <div class="row">
+      <input type="password" id="pass" placeholder="your secret key" autocomplete="off">
+      <button class="icon-btn" id="togglePass" type="button">Show</button>
+    </div>
+
+    <label for="input" id="inputLabel">Plain text</label>
+    <textarea id="input" placeholder="Type the message you want to encrypt…"></textarea>
+    <div class="meta" id="counter">0 / 284 bytes</div>
+
+    <div class="actions">
+      <button class="primary" id="runBtn">Encrypt</button>
+      <button class="icon-btn" id="swapBtn" type="button">↑ Use output as input</button>
+      <button class="icon-btn" id="clearBtn" type="button">Clear</button>
+    </div>
+
+    <label for="output" id="outputLabel">Ciphertext</label>
+    <textarea id="output" readonly placeholder="Result appears here…"></textarea>
+    <div class="actions" style="margin-top:9px">
+      <button class="icon-btn" id="copyBtn" type="button">Copy result</button>
+    </div>
+
+    <div class="status" id="status"></div>
+  </section>
+
+  <!-- ============ VISUALISER ============ -->
+  <section class="panel">
+    <div class="viz-head">
+      <h2>Live lattice</h2>
+      <span class="gen-label" id="genLabel">idle</span>
+    </div>
+
+    <canvas id="grid" width="480" height="480"></canvas>
+
+    <div class="progress"><div id="bar"></div></div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Generation</div><div class="v" id="sGen">—</div></div>
+      <div class="stat"><div class="k">Cells flipped</div><div class="v" id="sFlips">—</div></div>
+      <div class="stat"><div class="k">Rounds</div><div class="v" id="sRounds">—</div></div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:#6d4aff"></i>live cell</span>
+      <span><i style="background:#beaaff"></i>just flipped to 1</span>
+      <span><i style="background:#30225c"></i>just flipped to 0</span>
+      <span><i style="background:#0d0b1a"></i>quiet</span>
+    </div>
+
+    <div class="slider-row">
+      <span>Speed</span>
+      <input type="range" id="speed" min="1" max="10" value="2">
+      <span id="speedVal">2 gen/frame</span>
+    </div>
+
+    <details>
+      <summary>How the cipher works</summary>
+      <p>Each cell is a bit. One generation is:</p>
+      <p><code>C[i] = F(B)[i] ⊕ A[i]</code></p>
+      <p>where <code>A</code> and <code>B</code> are two consecutive states. This makes decryption trivial: <code>P = F(A)[i] ⊕ B[i]</code>. The rule F combines neighbor sums with key-derived nonlinear terms.</p>
+    </details>
+  </section>
+</main>
+
+<footer style="text-align:center; padding:20px; color:var(--muted); font-size:.8rem;">
+  Built for educational exploration of spatiotemporal cryptography. GitHub Pages guide below ↓
+</footer>
+
+<script>
+// ================= CONSTANTS =================
+const W = 48, H = 48, N = W * H;
+const CAPACITY_BYTES = Math.floor(N / 8) - 2; // 284 bytes
+
+// ================= SHA-256 IMPLEMENTATION =================
+const K256 = new Uint32Array([
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+]);
+
+function rotr(x, n) { return ((x >>> n) | (x << (32 - n))) >>> 0; }
+
+function sha256(input) {
+  const H0 = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  const len = input.length;
+  const bitLen = len * 8;
+  const padLen = ((len + 9 + 63) >> 6) << 6;
+  const msg = new Uint8Array(padLen);
+  msg.set(input);
+  msg[len] = 0x80;
+  const dv = new DataView(msg.buffer);
+  dv.setUint32(padLen - 4, bitLen >>> 0, false);
+  dv.setUint32(padLen - 8, Math.floor(bitLen / 4294967296), false);
+  
+  const w = new Uint32Array(64);
+  const h = H0.slice();
+  for (let off = 0; off < padLen; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i*4, false);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15]>>>3);
+      const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2]>>>10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+    }
+    let [a,b,c,d,e,f,g,hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + K256[i] + w[i]) >>> 0;
+      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    h[0]=(h[0]+a)>>>0; h[1]=(h[1]+b)>>>0; h[2]=(h[2]+c)>>>0; h[3]=(h[3]+d)>>>0;
+    h[4]=(h[4]+e)>>>0; h[5]=(h[5]+f)>>>0; h[6]=(h[6]+g)>>>0; h[7]=(h[7]+hh)>>>0;
+  }
+  const out = new Uint8Array(32);
+  const odv = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) odv.setUint32(i*4, h[i], false);
+  return out;
+}
+
+// ================= PRNG =================
+function makePRNG(seedWords) {
+  let s = seedWords.slice();
+  return function() {
+    let t = s[3];
+    const a = s[0];
+    s[3] = s[2]; s[2] = s[1]; s[1] = a;
+    t ^= t << 11; t >>>= 0;
+    t ^= t >>> 8;
+    s[0] = (t ^ a ^ (a >>> 19)) >>> 0;
+    return s[0];
+  };
+}
+
+function randBits(rng, count) {
+  const out = new Uint8Array(count);
+  let w = 0, avail = 0;
+  for (let i = 0; i < count; i++) {
+    if (avail === 0) { w = rng(); avail = 32; }
+    out[i] = w & 1; w >>>= 1; avail--;
+  }
+  return out;
+}
+
+// ================= KEY DERIVATION =================
+async function deriveKeyMaterial(passphrase, nonce) {
+  const pw = new TextEncoder().encode(passphrase);
+  const seedInput = new Uint8Array(4 + pw.length + nonce.length);
+  seedInput.set(new TextEncoder().encode('RCA1'), 0);
+  seedInput.set(pw, 4);
+  seedInput.set(nonce, 4 + pw.length);
+  const h = sha256(seedInput);
+  const dv = new DataView(h.buffer);
+  const seed = [dv.getUint32(0), dv.getUint32(4), dv.getUint32(8), dv.getUint32(12)];
+  if (!(seed[0]|seed[1]|seed[2]|seed[3])) seed[0] = 0x9e3779b9;
+  const rng = makePRNG(seed);
+  
+  const coeff = randBits(rng, 12);
+  coeff[0] = 1; coeff[1] = 1; // Force non-degeneracy
+  
+  const generations = 110 + (rng() % 90);
+  const salt = randBits(rng, N);
+  const iv = randBits(rng, N);
+  const preMask = randBits(rng, N);
+  
+  return { coeff, generations, salt, iv, preMask };
+}
+
+// ================= BIT PACKING =================
+function bytesToBits(bytes, bitLen) {
+  const out = new Uint8Array(bitLen);
+  for (let i = 0; i < bitLen; i++) {
+    out[i] = (bytes[i >> 3] >> (7 - (i & 7))) & 1;
+  }
+  return out;
+}
+
+function bitsToBytes(bits) {
+  const out = new Uint8Array((bits.length + 7) >> 3);
+  for (let i = 0; i < out.length; i++) {
+    let b = 0;
+    for (let k = 0; k < 8 && i*8+k < bits.length; k++) b = (b << 1) | bits[i*8+k];
+    out[i] = b;
+  }
+  return out;
+}
+
+function buildPayload(text) {
+  const data = new TextEncoder().encode(text);
+  if (data.length > CAPACITY_BYTES) throw new Error(`Too long: max ${CAPACITY_BYTES} bytes`);
+  const total = N >> 3; // 288 bytes
+  const buf = new Uint8Array(total);
+  buf[0] = (data.length >> 8) & 0xff;
+  buf[1] = data.length & 0xff;
+  buf.set(data, 2);
+  return buf;
+}
+
+function parsePayload(bits, preMask) {
+  const b = bits.slice();
+  for (let i = 0; i < N; i++) b[i] ^= preMask[i];
+  const bytes = bitsToBytes(b);
+  const len = (bytes[0] << 8) | bytes[1];
+  if (len > CAPACITY_BYTES) throw new Error('Invalid length header');
+  const data = bytes.slice(2, 2 + len);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(data);
+  } catch {
+    throw new Error('Payload is not valid UTF-8');
+  }
+}
+
+// ================= CA RULE F =================
+function F(src, dst, coeff, salt) {
+  for (let y = 0; y < H; y++) {
+    const yUp = (y - 1 + H) % H, yDn = (y + 1) % H;
+    const rowU = yUp * W, rowM = y * W, rowD = yDn * W;
+    for (let x = 0; x < W; x++) {
+      const xL = (x - 1 + W) % W, xR = (x + 1) % W;
+      const s = src[rowM + x];
+      const n0 = src[rowU + xL], n1 = src[rowU + x], n2 = src[rowU + xR];
+      const n3 = src[rowM + xL],                     n4 = src[rowM + xR];
+      const n5 = src[rowD + xL], n6 = src[rowD + x], n7 = src[rowD + xR];
+      const nSum = n0+n1+n2+n3+n4+n5+n6+n7;
+
+      let v = 0;
+      v ^= coeff[0] & s;
+      v ^= coeff[1] & (nSum & 1);
+      v ^= coeff[2] & ((nSum >> 1) & 1);
+      v ^= coeff[3] & ((nSum >> 2) & 1);
+      v ^= coeff[4] & (n0 & n4);
+      v ^= coeff[5] & (n2 & n6);
+      v ^= coeff[6] & (n1 & n7);
+      v ^= coeff[7] & (n3 & n5);
+      v ^= coeff[8] & ((n0^n1^n2^n3) & (n4^n5^n6^n7));
+      v ^= coeff[9] & (s & (n0^n2^n5^n7));
+      v ^= coeff[10] & (n1 & n3 & n5 & n7);
+      v ^= coeff[11] & ((n0 | n2) & (n4 | n6));
+      
+      dst[rowM + x] = (v ^ salt[rowM + x]) & 1;
+    }
+  }
+}
+
+// ================= RUNNER FUNCTIONS =================
+async function runForward(A, B, km, onStep) {
+  const tmp = new Uint8Array(N);
+  for (let g = 0; g < km.generations; g++) {
+    F(B, tmp, km.coeff, km.salt);
+    const C = new Uint8Array(N);
+    let flips = 0;
+    for (let i = 0; i < N; i++) {
+      C[i] = tmp[i] ^ A[i];
+      if (C[i] !== B[i]) flips++;
+    }
+    A = B; B = C;
+    await onStep(g + 1, B, flips / N);
+  }
+  return { A, B };
+}
+
+async function runBackward(A, B, km, onStep) {
+  const tmp = new Uint8Array(N);
+  for (let g = 0; g < km.generations; g++) {
+    F(A, tmp, km.coeff, km.salt);
+    const P = new Uint8Array(N);
+    let flips = 0;
+    for (let i = 0; i < N; i++) {
+      P[i] = tmp[i] ^ B[i];
+      if (P[i] !== A[i]) flips++;
+    }
+    // New pair = (P, A)
+    const newA = P;
+    B = A;
+    A = newA;
+    await onStep(g + 1, A, flips / N);
+  }
+  return { A, B };
+}
+
+// ================= ENCRYPTION / DECRYPTION API =================
+async function encryptText(passphrase, text, onProgress) {
+  const nonce = crypto.getRandomValues(new Uint8Array(16));
+  const km = await deriveKeyMaterial(passphrase, nonce);
+  const payload = buildPayload(text);
+  let bits = bytesToBits(payload, N);
+  for (let i = 0; i < N; i++) bits[i] ^= km.preMask[i];
+  
+  let A = km.iv.slice();
+  let B = bits;
+  let lastGrid = null;
+  
+  await runForward(A, B, km, async (gen, grid, flipRate) => {
+    if (onProgress) {
+      lastGrid = grid;
+      await onProgress(gen, grid, flipRate, lastGrid);
+    }
+  });
+  
+  // Serialize: nonce || A || B
+  const ct = new Uint8Array(16 + (N>>3) + (N>>3));
+  ct.set(nonce, 0);
+  ct.set(bitsToBytes(A), 16);
+  ct.set(bitsToBytes(B), 16 + (N>>3));
+  
+  return { ct, generations: km.generations };
+}
+
+async function decryptText(passphrase, base64Ct, onProgress) {
+  // Parse ciphertext
+  let s = base64Ct.trim().replace(/\s+/g, '');
+  if (s.startsWith('RCA1:')) s = s.slice(5);
+  
+  const ct = new Uint8Array(atob(s).split('').map(c => c.charCodeAt(0)));
+  if (ct.length !== 16 + 2*(N>>3)) {
+    throw new Error(`Wrong ciphertext length (${ct.length})`);
+  }
+  
+  const nonce = ct.slice(0, 16);
+  const A = bytesToBits(ct.slice(16, 16 + (N>>3)), N);
+  const B = bytesToBits(ct.slice(16 + (N>>3)), N);
+  
+  const km = await deriveKeyMaterial(passphrase, nonce);
+  
+  let lastGrid = null;
+  const { A: finalA } = await runBackward(A, B, km, async (gen, grid, flipRate) => {
+    if (onProgress) {
+      lastGrid = grid;
+      await onProgress(gen, grid, flipRate, lastGrid);
+    }
+  });
+  
+  return parsePayload(finalA, km.preMask);
+}
+
+// ================= RENDERING =================
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d');
+const off = document.createElement('canvas');
+off.width = W; off.height = H;
+const offCtx = off.getContext('2d');
+const imgData = offCtx.createImageData(W, H);
+let lastRendered = null;
+
+function render(grid, speed) {
+  const d = imgData.data;
+  for (let i = 0; i < N; i++) {
+    const v = grid[i];
+    const changed = lastRendered ? (grid[i] !== lastRendered[i]) : false;
+    let r, g, b;
+    if (v) {
+      if (changed) { r=190; g=170; b=255; }   // bright
+      else { r=109; g=74; b=255; }            // proton purple
+    } else {
+      if (changed) { r=48; g=34; b=92; }
+      else { r=13; g=11; b=26; }
+    }
+    const o = i * 4;
+    d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
+  }
+  lastRendered = grid;
+  offCtx.putImageData(imgData, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+
+// ================= ANIMATION FRAME HELPERS =================
+async function nextFrames(count) {
+  return new Promise(res => {
+    let done = 0;
+    function loop() {
+      if (++done >= count) res();
+      else requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  });
+}
+
+// ================= UI STATE =================
+let mode = 'encrypt';
+let animating = false;
+let speed = 2;
+
+// ================= EVENT HANDLERS =================
+document.addEventListener('DOMContentLoaded', () => {
+  // Tabs
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (animating) return;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      mode = tab.dataset.mode;
+      updateUI();
+    });
+  });
+  
+  // Password toggle
+  document.getElementById('togglePass').addEventListener('click', e => {
+    const input = document.getElementById('pass');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    e.target.textContent = input.type === 'password' ? 'Show' : 'Hide';
+  });
+  
+  // Input character counter
+  document.getElementById('input').addEventListener('input', e => {
+    const bytes = new TextEncoder().encode(e.target.value).length;
+    document.getElementById('counter').textContent = `${bytes} / ${CAPACITY_BYTES} bytes`;
+  });
+  
+  // Speed slider
+  document.getElementById('speed').addEventListener('input', e => {
+    speed = parseInt(e.target.value);
+    document.getElementById('speedVal').textContent = `${speed} gen/frame`;
+  });
+  
+  // Buttons
+  document.getElementById('runBtn').addEventListener('click', run);
+  document.getElementById('swapBtn').addEventListener('click', swapIO);
+  document.getElementById('clearBtn').addEventListener('click', clearAll);
+  document.getElementById('copyBtn').addEventListener('click', copyOutput);
+  
+  // Keyboard shortcut
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') run();
+  });
+  
+  // Initial render
+  render(new Uint8Array(N).fill(0), speed);
+});
+
+function updateUI() {
+  const inputLabel = document.getElementById('inputLabel');
+  const outputLabel = document.getElementById('outputLabel');
+  const runBtn = document.getElementById('runBtn');
+  
+  if (mode === 'encrypt') {
+    inputLabel.textContent = 'Plain text';
+    outputLabel.textContent = 'Ciphertext';
+    runBtn.textContent = 'Encrypt';
+    document.getElementById('input').placeholder = 'Type the message you want to encrypt…';
+  } else {
+    inputLabel.textContent = 'Ciphertext';
+    outputLabel.textContent = 'Plain text';
+    runBtn.textContent = 'Decrypt';
+    document.getElementById('input').placeholder = 'Paste RCA1: prefixed ciphertext here…';
+  }
+  setStatus('', '');
+}
+
+async function run() {
+  if (animating) return;
+  animating = true;
+  
+  const passphrase = document.getElementById('pass').value;
+  const input = document.getElementById('input').value;
+  const runBtn = document.getElementById('runBtn');
+  const status = document.getElementById('status');
+  
+  if (!passphrase) { setStatus('Enter a passphrase', 'err'); animating = false; return; }
+  if (!input.trim()) { setStatus('Enter text to process', 'err'); animating = false; return; }
+  
+  runBtn.disabled = true;
+  setStatus('Processing...', '');
+  
+  try {
+    const startTime = performance.now();
+    
+    const onProgress = async (gen, grid, flipRate, lastGrid) => {
+      // Update stats
+      document.getElementById('genLabel').textContent = `Gen ${gen}`;
+      document.getElementById('sGen').textContent = gen;
+      document.getElementById('sFlips').textContent = Math.round(flipRate * 100) + '%';
+      document.getElementById('bar').style.width = (gen / totalRounds * 100) + '%';
+      
+      // Render every 'speed' generations
+      const framesPerTick = speed;
+      const tick = gen % framesPerTick === 0 || gen === totalRounds;
+      if (tick) render(grid, speed);
+      
+      // Yield to animation frame
+      await nextFrames(1);
+    };
+    
+    let totalRounds = 0;
+    let result;
+    
+    if (mode === 'encrypt') {
+      totalRounds = 200; // Approximate for progress bar
+      result = await encryptText(passphrase, input, onProgress);
+    } else {
+      totalRounds = 200; // Will be updated with actual
+      result = await decryptText(passphrase, input, onProgress);
+    }
+    
+    const elapsed = performance.now() - startTime;
+    
+    document.getElementById('genLabel').textContent = 'complete';
+    document.getElementById('sGen').textContent = '—';
+    document.getElementById('sFlips').textContent = '—';
+    document.getElementById('bar').style.width = '100%';
+    render(new Uint8Array(N).fill(0), speed);
+    
+    if (mode === 'encrypt') {
+      // Serialize output
+      const b64 = btoa(String.fromCharCode(...result.ct));
+      document.getElementById('output').value = 'RCA1:' + b64;
+      setStatus(`Encrypted in ${(elapsed/1000).toFixed(2)}s`, 'ok');
+    } else {
+      document.getElementById('output').value = result;
+      setStatus(`Decrypted in ${(elapsed/1000).toFixed(2)}s`, 'ok');
+    }
+    
+  } catch (err) {
+    console.error(err);
+    setStatus(mode === 'encrypt' ? 
+      `Encryption failed: ${err.message}` : 
+      `Decryption failed (wrong key or corrupted?): ${err.message}`, 'err');
+  }
+  
+  animating = false;
+  runBtn.disabled = false;
+}
+
+function swapIO() {
+  if (animating) return;
+  const inputEl = document.getElementById('input');
+  const outputEl = document.getElementById('output');
+  const temp = inputEl.value;
+  inputEl.value = outputEl.value;
+  outputEl.value = '';
+  setStatus('Swapped. Click "Run" to process.', '');
+}
+
+function clearAll() {
+  if (animating) return;
+  document.getElementById('input').value = '';
+  document.getElementById('output').value = '';
+  document.getElementById('pass').value = '';
+  setStatus('', '');
+  render(new Uint8Array(N).fill(0), speed);
+}
+
+function copyOutput() {
+  const output = document.getElementById('output').value;
+  navigator.clipboard.writeText(output).then(() => {
+    setStatus('Copied to clipboard!', 'ok');
+  }).catch(() => {
+    setStatus('Failed to copy', 'err');
+  });
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + type;
+}
+</script>
+</body>
+</html>
